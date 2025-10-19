@@ -1,0 +1,4 @@
+# Bot Telegram Simplificado - Remoção de Duplicatas
+# Apenas 1 dependência!
+
+python-telegram-bot==20.7
