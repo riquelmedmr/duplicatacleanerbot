@@ -1,4 +1,7 @@
 # Bot Telegram Simplificado - Remoção de Duplicatas
-# Apenas 1 dependência!
 
+# Bot do Telegram
 python-telegram-bot==20.7
+
+# Servidor Web (necessário para Render)
+Flask==3.0.0
