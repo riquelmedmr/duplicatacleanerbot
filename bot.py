@@ -4,6 +4,7 @@ Não precisa baixar nada! Usa apenas o file_unique_id do Telegram
 """
 
 import os
+import threading
 import logging
 from typing import Dict, Set
 from collections import defaultdict
@@ -17,6 +18,7 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+from flask import Flask
 
 # Configuração de logging
 logging.basicConfig(
@@ -210,6 +212,286 @@ TRANSLATIONS = {
     'it': {
         'welcome': '👋 Ciao! Sono *Duplicate Cleaner Bot*\n\n'
                    'Aggiungimi a un gruppo e rileverò e rimuoverò automaticamente foto/video duplicati!\n\n'
+                   '🔹 Comandi:\n'
+                   '/start - Avvia\n'
+                   '/lang - Cambia lingua\n'
+                   '/stats - Visualizza statistiche\n'
+                   '/clear - Cancella cronologia\n'
+                   '/help - Aiuto',
+        'lang_select': '🌐 Seleziona la tua lingua:',
+        'lang_changed': '✅ Lingua cambiata!',
+        'duplicate_found': '🔴 Duplicato rilevato e rimosso!',
+        'new_media': '✅ Media unico salvato',
+        'stats': '📊 *Statistiche chat*\n\n'
+                 '🖼 Foto uniche: {photos}\n'
+                 '🎥 Video unici: {videos}\n'
+                 '📄 Documenti unici: {documents}\n'
+                 '🗑 Duplicati rimossi: {duplicates}\n'
+                 '💾 Totale: {total}',
+        'cleared': '🗑 Cronologia cancellata!',
+        'help': '❓ *Come funziona*\n\n'
+                'Aggiungi il bot a un gruppo e dai i permessi di amministratore.\n\n'
+                'Il bot rileva i duplicati usando l\'ID unico di Telegram (file_unique_id).\n'
+                'Nessun download necessario! Istantaneo e funziona con qualsiasi dimensione.\n\n'
+                '*Rileva:*\n'
+                '• Foto duplicate\n'
+                '• Video duplicati\n'
+                '• GIF duplicate\n'
+                '• Documenti duplicati\n'
+                '• Audio duplicati\n'
+                '• Sticker duplicati\n\n'
+                'Funziona anche con gli inoltri!',
+        'error': '❌ Errore di elaborazione',
+        'need_admin': '⚠️ Ho bisogno dei permessi di amministratore per eliminare i messaggi!',
+        'group_only': 'ℹ️ Questo comando funziona solo nei gruppi',
+    }
+}
+
+# ==================== CLASSE PRINCIPAL ====================
+class SimpleDuplicate Cleaner Bot:
+    def __init__(self):
+        # Armazena apenas file_unique_id por chat
+        self.photo_ids: Dict[int, Set[str]] = defaultdict(set)
+        self.video_ids: Dict[int, Set[str]] = defaultdict(set)
+        self.document_ids: Dict[int, Set[str]] = defaultdict(set)
+        self.audio_ids: Dict[int, Set[str]] = defaultdict(set)
+        self.sticker_ids: Dict[int, Set[str]] = defaultdict(set)
+        self.animation_ids: Dict[int, Set[str]] = defaultdict(set)
+        
+        # Idioma por chat
+        self.chat_languages: Dict[int, str] = defaultdict(lambda: 'pt')
+        
+        # Estatísticas por chat
+        self.stats: Dict[int, Dict] = defaultdict(lambda: {
+            'photos': 0,
+            'videos': 0,
+            'documents': 0,
+            'duplicates': 0
+        })
+    
+    def get_text(self, chat_id: int, key: str, **kwargs) -> str:
+        """Retorna texto traduzido"""
+        lang = self.chat_languages[chat_id]
+        text = TRANSLATIONS.get(lang, TRANSLATIONS['pt']).get(key, '')
+        return text.format(**kwargs) if kwargs else text
+    
+    def is_duplicate(self, chat_id: int, file_unique_id: str, media_type: str) -> bool:
+        """Verifica se é duplicata usando file_unique_id do Telegram"""
+        storage = {
+            'photo': self.photo_ids,
+            'video': self.video_ids,
+            'document': self.document_ids,
+            'audio': self.audio_ids,
+            'sticker': self.sticker_ids,
+            'animation': self.animation_ids
+        }.get(media_type)
+        
+        if not storage:
+            return False
+        
+        return file_unique_id in storage[chat_id]
+    
+    def add_media(self, chat_id: int, file_unique_id: str, media_type: str):
+        """Adiciona mídia ao registro"""
+        storage = {
+            'photo': self.photo_ids,
+            'video': self.video_ids,
+            'document': self.document_ids,
+            'audio': self.audio_ids,
+            'sticker': self.sticker_ids,
+            'animation': self.animation_ids
+        }.get(media_type)
+        
+        if storage:
+            storage[chat_id].add(file_unique_id)
+            
+            # Atualiza estatísticas
+            if media_type == 'photo':
+                self.stats[chat_id]['photos'] += 1
+            elif media_type == 'video':
+                self.stats[chat_id]['videos'] += 1
+            elif media_type == 'document':
+                self.stats[chat_id]['documents'] += 1
+
+# Instância global
+bot_instance = SimpleDuplicate Cleaner Bot()
+
+# ==================== HANDLERS ====================
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /start"""
+    chat_id = update.effective_chat.id
+    await update.message.reply_text(
+        bot_instance.get_text(chat_id, 'welcome'),
+        parse_mode='Markdown'
+    )
+
+async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /lang"""
+    keyboard = [
+        [
+            InlineKeyboardButton("🇧🇷 PT", callback_data='lang_pt'),
+            InlineKeyboardButton("🇺🇸 EN", callback_data='lang_en'),
+            InlineKeyboardButton("🇪🇸 ES", callback_data='lang_es'),
+        ],
+        [
+            InlineKeyboardButton("🇫🇷 FR", callback_data='lang_fr'),
+            InlineKeyboardButton("🇩🇪 DE", callback_data='lang_de'),
+            InlineKeyboardButton("🇮🇹 IT", callback_data='lang_it'),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        bot_instance.get_text(update.effective_chat.id, 'lang_select'),
+        reply_markup=reply_markup
+    )
+
+async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback para mudança de idioma"""
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = update.effective_chat.id
+    lang = query.data.split('_')[1]
+    bot_instance.chat_languages[chat_id] = lang
+    
+    await query.edit_message_text(
+        bot_instance.get_text(chat_id, 'lang_changed')
+    )
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /stats"""
+    chat_id = update.effective_chat.id
+    
+    # Só funciona em grupos
+    if update.effective_chat.type == 'private':
+        await update.message.reply_text(
+            bot_instance.get_text(chat_id, 'group_only')
+        )
+        return
+    
+    stats = bot_instance.stats[chat_id]
+    total = stats['photos'] + stats['videos'] + stats['documents']
+    
+    await update.message.reply_text(
+        bot_instance.get_text(
+            chat_id,
+            'stats',
+            photos=stats['photos'],
+            videos=stats['videos'],
+            documents=stats['documents'],
+            duplicates=stats['duplicates'],
+            total=total
+        ),
+        parse_mode='Markdown'
+    )
+
+async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /clear"""
+    chat_id = update.effective_chat.id
+    
+    # Só funciona em grupos
+    if update.effective_chat.type == 'private':
+        await update.message.reply_text(
+            bot_instance.get_text(chat_id, 'group_only')
+        )
+        return
+    
+    # Limpa tudo deste chat
+    bot_instance.photo_ids[chat_id].clear()
+    bot_instance.video_ids[chat_id].clear()
+    bot_instance.document_ids[chat_id].clear()
+    bot_instance.audio_ids[chat_id].clear()
+    bot_instance.sticker_ids[chat_id].clear()
+    bot_instance.animation_ids[chat_id].clear()
+    bot_instance.stats[chat_id] = {
+        'photos': 0,
+        'videos': 0,
+        'documents': 0,
+        'duplicates': 0
+    }
+    
+    await update.message.reply_text(
+        bot_instance.get_text(chat_id, 'cleared')
+    )
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /help"""
+    chat_id = update.effective_chat.id
+    await update.message.reply_text(
+        bot_instance.get_text(chat_id, 'help'),
+        parse_mode='Markdown'
+    )
+
+async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler universal para todas as mídias"""
+    chat_id = update.effective_chat.id
+    message = update.message
+    
+    # Detecta tipo de mídia e pega file_unique_id
+    media_info = None
+    
+    if message.photo:
+        # Pega a maior resolução
+        photo = message.photo[-1]
+        media_info = ('photo', photo.file_unique_id)
+    
+    elif message.video:
+        media_info = ('video', message.video.file_unique_id)
+    
+    elif message.animation:  # GIF
+        media_info = ('animation', message.animation.file_unique_id)
+    
+    elif message.document:
+        media_info = ('document', message.document.file_unique_id)
+    
+    elif message.audio:
+        media_info = ('audio', message.audio.file_unique_id)
+    
+    elif message.sticker:
+        media_info = ('sticker', message.sticker.file_unique_id)
+    
+    if not media_info:
+        return
+    
+    media_type, file_unique_id = media_info
+    
+    # Verifica se é duplicata
+    if bot_instance.is_duplicate(chat_id, file_unique_id, media_type):
+        try:
+            # Deleta mensagem duplicada
+            await message.delete()
+            bot_instance.stats[chat_id]['duplicates'] += 1
+            
+            logger.info(f"Duplicata removida no chat {chat_id}: {media_type}")
+        except Exception as e:
+            logger.error(f"Erro ao deletar: {e}")
+            # Avisa se não tem permissão
+            if "not enough rights" in str(e).lower():
+                await message.reply_text(
+                    bot_instance.get_text(chat_id, 'need_admin')
+                )
+    else:
+        # Nova mídia - adiciona ao registro
+        bot_instance.add_media(chat_id, file_unique_id, media_type)
+        logger.info(f"Nova mídia salva no chat {chat_id}: {media_type}")
+
+# ==================== SERVIDOR WEB (para Render) ====================
+from flask import Flask
+import threading
+
+# Cria servidor Flask simples
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Duplicate Cleaner Bot - Online</title>
+        <style>
+            body {
+             rò automaticamente foto/video duplicati!\n\n'
                    '🔹 Comandi:\n'
                    '/start - Avvia\n'
                    '/lang - Cambia lingua\n'
