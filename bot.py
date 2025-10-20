@@ -291,7 +291,7 @@ def home():
             <div class="info">
                 Bot Telegram para remoção de duplicatas<br>
                 Adicione-me ao seu grupo!
-                https://t.me/duplicatacleanerbot
+                <a href="https://t.me/duplicatacleanerbot"></a>
             </div>
         </div>
     </body>
