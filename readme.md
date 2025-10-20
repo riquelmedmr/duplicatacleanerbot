@@ -95,4 +95,4 @@ else:
 
 - `/start` - Mensagem de boas-vindas
 - `/help` - Explicação completa
-- `/
+- `/`
